@@ -29,7 +29,6 @@ def create_app():
   app.config["JWT_COOKIE_SECURE"] = True
   app.config["JWT_SECRET_KEY"] = "super-secret"
   app.config["JWT_COOKIE_CSRF_PROTECT"] = False
-  app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 60 * 60 * 24 * 7  # 1 week
   db.init_app(app)
   app.app_context().push()
   return app
@@ -54,22 +53,27 @@ def expired_token_callback(jwt_header, jwt_payload):
 
 # custom decorator authorize routes for admin or regular user
 def login_required(required_class):
+
   def wrapper(f):
+
     @wraps(f)
     @jwt_required()  # Ensure JWT authentication
     def decorated_function(*args, **kwargs):
-      user = User.query.get(get_jwt_identity())
+      user = required_class.query.filter_by(username=get_jwt_identity()).first()
+      print(user.__class__, required_class, user.__class__ == required_class)
       if user.__class__ != required_class:  # Check class equality
         return jsonify(message='Invalid user role'), 403
       return f(*args, **kwargs)
+
     return decorated_function
+
   return wrapper
 
 
 def login_user(username, password):
   user = User.query.filter_by(username=username).first()
   if user and user.check_password(password):
-    token = create_access_token(identity=user.id)
+    token = create_access_token(identity=user)
     return token
   return None
 
@@ -78,6 +82,7 @@ def login_user(username, password):
 
 
 @app.route('/', methods=['GET'])
+@app.route('/login', methods=['GET'])
 def login_page():
   return render_template('login.html')
 
@@ -87,6 +92,26 @@ def login_page():
 def todos_page():
   return render_template('todo.html', current_user=current_user)
 
+
+@app.route('/signup', methods=['GET'])
+def signup_page():
+  return render_template('signup.html')
+
+
+@app.route('/editTodo/<id>', methods=["GET"])
+@jwt_required()
+def edit_todo_page(id):
+  todos = Todo.query.all()
+  todo = Todo.query.filter_by(id=id, user_id=current_user.id).first()
+
+  if todo:
+    return render_template('edit.html', todo=todo, current_user=current_user)
+
+  flash('Todo not found or unauthorized')
+  return redirect(url_for('todos_page'))
+
+
+# Action Routes
 
 @app.route('/signup', methods=['POST'])
 def signup_action():
@@ -110,7 +135,6 @@ def signup_action():
 def login_action():
   data = request.form
   token = login_user(data['username'], data['password'])
-  print(token)
   response = None
   if token:
     flash('Logged in successfully.')  # send message to next page
@@ -122,25 +146,52 @@ def login_action():
     response = redirect(url_for('login_page'))
   return response
 
-
-@app.route('/editTodo/<id>', methods=["GET"])
+@app.route('/createTodo', methods=['POST'])
 @jwt_required()
-def edit_todo_page(id):
-  todos = Todo.query.all()
-  todo = Todo.query.filter_by(id=id, user_id=current_user.id).first()
-
-  if todo:
-    return render_template('edit.html', todo=todo, current_user=current_user)
-
-  flash('Todo not found or unauthorized')
+def create_todo_action():
+  data = request.form
+  current_user.add_todo(data['text'])
+  flash('Created')
   return redirect(url_for('todos_page'))
 
+@app.route('/toggle/<id>', methods=['POST'])
+@jwt_required()
+def toggle_todo_action(id):
+  todo = current_user.toggle_todo(id)
+  if todo is None:
+    flash('Invalid id or unauthorized')
+  else:
+    flash(f'Todo { "done" if todo.done else "not done" }!')
+  return redirect(url_for('todos_page'))
 
-# Action Routes
+@app.route('/editTodo/<id>', methods=["POST"])
+@jwt_required()
+def edit_todo_action(id):
+  data = request.form
+  res = current_user.update_todo(id, data["text"])
+  if res:
+    flash('Todo Updated!')
+  else:
+    flash('Todo not found or unauthorized')
+  return redirect(url_for('todos_page'))
 
+@app.route('/deleteTodo/<id>', methods=["GET"])
+@jwt_required()
+def delete_todo_action(id):
+  res = current_user.delete_todo(id)
+  if res == None:
+    flash('Invalid id or unauthorized')
+  else:
+    flash('Todo Deleted')
+  return redirect(url_for('todos_page'))
 
-
-
+@app.route('/logout', methods=['GET'])
+@jwt_required()
+def logout_action():
+  flash('Logged Out')
+  response = redirect(url_for('login_page'))
+  unset_jwt_cookies(response)
+  return response
 
 if __name__ == "__main__":
   app.run(host='0.0.0.0', port=81)
