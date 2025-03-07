@@ -39,8 +39,8 @@ jwt = JWTManager(app)
 
 
 @jwt.user_identity_loader
-def user_identity_lookup(user):
-  return user.id
+def user_identity_lookup(identity):
+  return identity
 
 
 @jwt.user_lookup_loader
