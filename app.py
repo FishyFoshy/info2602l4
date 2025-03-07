@@ -78,21 +78,9 @@ def login_user(username, password):
 
 
 @app.route('/', methods=['GET'])
-@app.route('/login', methods=['POST'])
-def login_action():
-  data = request.form
-  token = login_user(data['username'], data['password'])
-  print(token)
-  response = None
-  if token:
-    flash('Logged in successfully.')  # send message to next page
-    response = redirect(
-        url_for('todos_page'))  # redirect to main page if login successful
-    set_access_cookies(response, token)
-  else:
-    flash('Invalid username or password')  # send message to next page
-    response = redirect(url_for('login_page'))
-  return response
+@app.route('/login', methods=['GET'])
+def login_page():
+  return render_template('login.html')
 
 
 @app.route('/app', methods=['GET'])
